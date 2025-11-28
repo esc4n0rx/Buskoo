@@ -7,6 +7,7 @@ import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { useToast } from "@/hooks/use-toast"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
+import { Input } from "../ui/input"
 
 const CATEGORIAS = [
   { value: "smartphones", label: "Smartphones" },
@@ -23,6 +24,7 @@ export function UploadXlsxForm() {
   const [isLoading, setIsLoading] = useState(false)
   const [categoria, setCategoria] = useState("")
   const [file, setFile] = useState<File | null>(null)
+  const [errorDetails, setErrorDetails] = useState<string | null>(null)
   const { toast } = useToast()
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -37,6 +39,7 @@ export function UploadXlsxForm() {
         return
       }
       setFile(selectedFile)
+      setErrorDetails(null) // Limpar erros anteriores ao selecionar novo arquivo
     }
   }
 
@@ -72,21 +75,29 @@ export function UploadXlsxForm() {
         })
         setFile(null)
         setCategoria("")
+        setErrorDetails(null)
         // Resetar input de arquivo
         const fileInput = document.getElementById('xlsx-file') as HTMLInputElement
         if (fileInput) fileInput.value = ''
       } else {
         const errorData = await response.json()
+        const errorMessage = errorData.error || "Tente novamente"
+
+        setErrorDetails(errorMessage)
+
         toast({
           title: "Erro ao importar",
-          description: errorData.error || "Tente novamente",
+          description: "Verifique os detalhes do erro abaixo",
           variant: "destructive",
         })
       }
     } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : "Erro ao processar arquivo"
+      setErrorDetails(errorMessage)
+
       toast({
         title: "Erro",
-        description: "Erro ao processar arquivo",
+        description: "Verifique os detalhes do erro abaixo",
         variant: "destructive",
       })
     } finally {
@@ -115,6 +126,18 @@ export function UploadXlsxForm() {
           </ul>
         </AlertDescription>
       </Alert>
+
+      {errorDetails && (
+        <Alert variant="destructive">
+          <AlertCircle className="h-4 w-4" />
+          <AlertTitle>Detalhes do Erro</AlertTitle>
+          <AlertDescription>
+            <div className="mt-2 font-mono text-sm whitespace-pre-wrap bg-destructive/10 p-3 rounded-md border border-destructive/20">
+              {errorDetails}
+            </div>
+          </AlertDescription>
+        </Alert>
+      )}
 
       <form onSubmit={handleSubmit} className="space-y-4">
         <div className="space-y-2">

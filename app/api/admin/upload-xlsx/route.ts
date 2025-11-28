@@ -45,21 +45,79 @@ export async function POST(request: Request) {
     const worksheet = workbook.Sheets[sheetName]
 
     // Converter para JSON
-    const dados = XLSX.utils.sheet_to_json(worksheet) as any[]
+    const dadosOriginais = XLSX.utils.sheet_to_json(worksheet) as any[]
 
-    if (dados.length === 0) {
+    if (dadosOriginais.length === 0) {
       return NextResponse.json(
         { error: "Planilha vazia" },
         { status: 400 }
       )
     }
 
+    // Normalizar nomes das colunas e valores
+    const dados = dadosOriginais.map((row) => {
+      const normalizedRow: any = {}
+      for (const key in row) {
+        // Normalizar nome da coluna: remover espaços, lowercase
+        const normalizedKey = key.trim().toLowerCase().replace(/\s+/g, '_')
+        // Normalizar valor: trim se for string
+        const value = row[key]
+        normalizedRow[normalizedKey] = typeof value === 'string' ? value.trim() : value
+      }
+      return normalizedRow
+    })
+
+    // Validar se as colunas obrigatórias existem
+    if (dados.length > 0) {
+      const colunasDetectadas = Object.keys(dados[0])
+      const colunasObrigatorias = ['fabricante', 'modelo', 'preco_base', 'preco_venda', 'fornecedor', 'regiao']
+      const colunasFaltandoNoHeader = colunasObrigatorias.filter(col => !colunasDetectadas.includes(col))
+
+      if (colunasFaltandoNoHeader.length > 0) {
+        return NextResponse.json(
+          {
+            error: `Colunas obrigatórias faltando no cabeçalho da planilha: ${colunasFaltandoNoHeader.join(', ')}.\n\n` +
+                   `Colunas detectadas: ${colunasDetectadas.join(', ')}\n\n` +
+                   `Certifique-se de que o cabeçalho contém todas as colunas obrigatórias (sem espaços extras).`
+          },
+          { status: 400 }
+        )
+      }
+    }
+
     // Validar e preparar dados
-    const produtosParaInserir = dados.map((item) => {
-      // Validar campos obrigatórios
-      if (!item.fabricante || !item.modelo || !item.preco_base ||
-          !item.preco_venda || !item.fornecedor || !item.regiao) {
-        throw new Error(`Produto inválido: faltam campos obrigatórios em ${item.modelo || 'produto sem nome'}`)
+    const produtosParaInserir = dados.map((item, index) => {
+      const linhaExcel = index + 2 // +2 porque linha 1 é o cabeçalho e arrays começam em 0
+
+      // Validar campos obrigatórios (valores vazios)
+      const camposFaltantes = []
+      if (!item.fabricante) camposFaltantes.push('fabricante')
+      if (!item.modelo) camposFaltantes.push('modelo')
+      if (!item.preco_base) camposFaltantes.push('preco_base')
+      if (!item.preco_venda) camposFaltantes.push('preco_venda')
+      if (!item.fornecedor) camposFaltantes.push('fornecedor')
+      if (!item.regiao) camposFaltantes.push('regiao')
+
+      if (camposFaltantes.length > 0) {
+        throw new Error(
+          `Erro na linha ${linhaExcel}: Campos obrigatórios com valores vazios: ${camposFaltantes.join(', ')}.\n` +
+          `Produto: ${item.modelo || item.fabricante || 'não identificado'}`
+        )
+      }
+
+      // Validar se os preços são números válidos
+      if (isNaN(Number(item.preco_base)) || Number(item.preco_base) <= 0) {
+        throw new Error(
+          `Erro na linha ${linhaExcel}: O campo 'preco_base' deve ser um número maior que zero. ` +
+          `Valor atual: ${item.preco_base}. Produto: ${item.modelo}`
+        )
+      }
+
+      if (isNaN(Number(item.preco_venda)) || Number(item.preco_venda) <= 0) {
+        throw new Error(
+          `Erro na linha ${linhaExcel}: O campo 'preco_venda' deve ser um número maior que zero. ` +
+          `Valor atual: ${item.preco_venda}. Produto: ${item.modelo}`
+        )
       }
 
       // Processar image_url - pode vir como string separada por vírgulas

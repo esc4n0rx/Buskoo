@@ -12,26 +12,50 @@ interface InstallmentSimulatorProps {
   preco: number
 }
 
+// Taxas reais do gateway de cartão
+const TAXAS_GATEWAY: Record<number, number> = {
+  1: 5.99,
+  2: 11.39,
+  3: 12.49,
+  4: 13.09,
+  5: 13.79,
+  6: 14.49,
+  7: 15.49,
+  8: 16.09,
+  9: 16.69,
+  10: 17.39,
+  11: 18.39,
+  12: 18.79,
+}
+
 export function InstallmentSimulator({ preco }: InstallmentSimulatorProps) {
   const [parcelas, setParcelas] = useState(1)
-  const [taxaJuros, setTaxaJuros] = useState(0)
+  const [valorEntrada, setValorEntrada] = useState(0)
 
   const calculo = useMemo(() => {
-    const i = taxaJuros / 100
-    const n = parcelas
+    // Valor a ser financiado (após a entrada)
+    const valorFinanciado = Math.max(0, preco - valorEntrada)
+
+    // Taxa do gateway para o número de parcelas
+    const taxaGateway = TAXAS_GATEWAY[parcelas] || 0
+    const i = taxaGateway / 100
 
     let valorParcela: number
     let totalPago: number
     let totalJuros: number
 
-    if (i === 0) {
-      valorParcela = preco / n
-      totalPago = preco
+    if (valorFinanciado === 0) {
+      valorParcela = 0
+      totalPago = valorEntrada
+      totalJuros = 0
+    } else if (i === 0 || parcelas === 1) {
+      valorParcela = valorFinanciado / parcelas
+      totalPago = valorEntrada + valorFinanciado
       totalJuros = 0
     } else {
-      const fator = Math.pow(1 + i, n)
-      valorParcela = (preco * (fator * i)) / (fator - 1)
-      totalPago = valorParcela * n
+      const fator = Math.pow(1 + i, parcelas)
+      valorParcela = (valorFinanciado * (fator * i)) / (fator - 1)
+      totalPago = valorEntrada + (valorParcela * parcelas)
       totalJuros = totalPago - preco
     }
 
@@ -39,8 +63,10 @@ export function InstallmentSimulator({ preco }: InstallmentSimulatorProps) {
       valorParcela,
       totalPago,
       totalJuros,
+      valorFinanciado,
+      taxaGateway,
     }
-  }, [preco, parcelas, taxaJuros])
+  }, [preco, parcelas, valorEntrada])
 
   const formatCurrency = (value: number) =>
     new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(value)
@@ -55,16 +81,16 @@ export function InstallmentSimulator({ preco }: InstallmentSimulatorProps) {
             <TooltipTrigger asChild>
               <button
                 className="text-muted-foreground hover:text-foreground transition-smooth"
-                aria-label="Informação sobre a fórmula"
+                aria-label="Informação sobre o simulador"
               >
                 <Info className="w-4 h-4" />
               </button>
             </TooltipTrigger>
             <TooltipContent className="max-w-xs">
               <p className="text-sm">
-                Fórmula Price: Parcela = P × ((1+i)ⁿ × i) / ((1+i)ⁿ - 1)
+                Simulador com taxas reais do gateway de cartão de crédito.
                 <br />
-                Onde P = principal, i = taxa mensal, n = número de parcelas
+                Você pode dar uma entrada e parcelar o restante.
               </p>
             </TooltipContent>
           </Tooltip>
@@ -74,9 +100,30 @@ export function InstallmentSimulator({ preco }: InstallmentSimulatorProps) {
       <div className="grid gap-6 md:grid-cols-2">
         <div className="space-y-4">
           <div className="space-y-2">
-            <div className="flex justify-between">
+            <Label htmlFor="entrada">Valor de Entrada (Opcional)</Label>
+            <Input
+              id="entrada"
+              type="number"
+              min={0}
+              max={preco}
+              step={0.01}
+              value={valorEntrada}
+              onChange={(e) => setValorEntrada(Math.min(Number(e.target.value), preco))}
+              placeholder="R$ 0,00"
+              aria-label="Valor de entrada"
+            />
+            <p className="text-xs text-muted-foreground">
+              Máximo: {formatCurrency(preco)}
+            </p>
+          </div>
+
+          <div className="space-y-2">
+            <div className="flex justify-between items-center">
               <Label htmlFor="parcelas">Número de Parcelas</Label>
-              <span className="text-sm font-medium text-primary">{parcelas}x</span>
+              <div className="text-right">
+                <span className="text-sm font-medium text-primary">{parcelas}x</span>
+                <span className="text-xs text-muted-foreground ml-2">({calculo.taxaGateway}% a.m.)</span>
+              </div>
             </div>
             <Slider
               id="parcelas"
@@ -88,23 +135,9 @@ export function InstallmentSimulator({ preco }: InstallmentSimulatorProps) {
               aria-label="Número de parcelas"
             />
             <div className="flex justify-between text-xs text-muted-foreground">
-              <span>1x</span>
-              <span>12x</span>
+              <span>1x (5,99%)</span>
+              <span>12x (18,79%)</span>
             </div>
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="taxa">Taxa de Juros Mensal (%)</Label>
-            <Input
-              id="taxa"
-              type="number"
-              min={0}
-              max={10}
-              step={0.1}
-              value={taxaJuros}
-              onChange={(e) => setTaxaJuros(Number(e.target.value))}
-              aria-label="Taxa de juros mensal"
-            />
           </div>
         </div>
 
@@ -118,20 +151,38 @@ export function InstallmentSimulator({ preco }: InstallmentSimulatorProps) {
             </TableHeader>
             <TableBody>
               <TableRow>
+                <TableCell className="font-medium">Preço do produto</TableCell>
+                <TableCell className="text-right">{formatCurrency(preco)}</TableCell>
+              </TableRow>
+              {valorEntrada > 0 && (
+                <>
+                  <TableRow>
+                    <TableCell className="font-medium">Entrada</TableCell>
+                    <TableCell className="text-right text-green-600">
+                      {formatCurrency(valorEntrada)}
+                    </TableCell>
+                  </TableRow>
+                  <TableRow>
+                    <TableCell className="font-medium">Valor a financiar</TableCell>
+                    <TableCell className="text-right">{formatCurrency(calculo.valorFinanciado)}</TableCell>
+                  </TableRow>
+                </>
+              )}
+              <TableRow>
                 <TableCell className="font-medium">Valor por parcela</TableCell>
                 <TableCell className="text-right text-primary font-bold">
                   {parcelas}x de {formatCurrency(calculo.valorParcela)}
                 </TableCell>
               </TableRow>
               <TableRow>
-                <TableCell className="font-medium">Total pago</TableCell>
-                <TableCell className="text-right">{formatCurrency(calculo.totalPago)}</TableCell>
-              </TableRow>
-              <TableRow>
                 <TableCell className="font-medium">Total de juros</TableCell>
                 <TableCell className={`text-right ${calculo.totalJuros > 0 ? "text-destructive" : "text-green-600"}`}>
                   {formatCurrency(calculo.totalJuros)}
                 </TableCell>
+              </TableRow>
+              <TableRow className="border-t-2">
+                <TableCell className="font-bold">Total a pagar</TableCell>
+                <TableCell className="text-right font-bold text-lg">{formatCurrency(calculo.totalPago)}</TableCell>
               </TableRow>
             </TableBody>
           </Table>
