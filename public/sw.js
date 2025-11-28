@@ -4,7 +4,6 @@ const DYNAMIC_CACHE = "buscaaqui-dynamic-v1"
 
 const STATIC_ASSETS = ["/", "/offline", "/manifest.json"]
 
-// Install event - cache static assets
 self.addEventListener("install", (event) => {
   event.waitUntil(
     caches
